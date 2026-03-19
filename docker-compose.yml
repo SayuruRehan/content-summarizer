@@ -1,0 +1,91 @@
+services:
+  db:
+    image: postgres:16
+    container_name: content_summarizer_db
+    environment:
+      POSTGRES_USER: scraper
+      POSTGRES_PASSWORD: scraper
+      POSTGRES_DB: scraper_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  api:
+    build: .
+    container_name: content_summarizer_api
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    env_file:
+      - .env
+    volumes:
+      - ./:/app
+      - ./output:/app/output
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+
+  airflow-webserver:
+    build: .
+    container_name: content_summarizer_airflow_web
+    command: airflow webserver
+    env_file:
+      - .env
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW_DATABASE_URL}
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__WEBSERVER__SECRET_KEY: dev-secret
+      PYTHONPATH: /app
+    volumes:
+      - ./:/app
+      - ./dags:/opt/airflow/dags
+      - ./output:/app/output
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+      - airflow-init
+
+  airflow-scheduler:
+    build: .
+    container_name: content_summarizer_airflow_scheduler
+    command: airflow scheduler
+    env_file:
+      - .env
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW_DATABASE_URL}
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      PYTHONPATH: /app
+    volumes:
+      - ./:/app
+      - ./dags:/opt/airflow/dags
+      - ./output:/app/output
+    depends_on:
+      - db
+      - airflow-webserver
+      - airflow-init
+
+  airflow-init:
+    build: .
+    container_name: content_summarizer_airflow_init
+    command: airflow db init
+    env_file:
+      - .env
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW_DATABASE_URL}
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      PYTHONPATH: /app
+    volumes:
+      - ./:/app
+      - ./dags:/opt/airflow/dags
+    depends_on:
+      - db
+
+volumes:
+  postgres_data:
